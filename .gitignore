@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# Node
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+
+# Local environment
+.env
+.env.local
+backend/.env
+frontend/.env.local
+
+# Runtime data
+backend/data/uploads/*
+backend/data/images/*
+backend/data/chroma/*
+backend/data/traces/*
+!backend/data/uploads/.gitkeep
+!backend/data/images/.gitkeep
+!backend/data/chroma/.gitkeep
+!backend/data/traces/.gitkeep
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+equipment_troubleshooting_agent_project_plan.md

@@ -1,0 +1,64 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: equipment-agent-postgres
+    environment:
+      POSTGRES_DB: equipment_agent
+      POSTGRES_USER: equipment_agent
+      POSTGRES_PASSWORD: equipment_agent
+    ports:
+      - "55432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U equipment_agent -d equipment_agent"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+    container_name: equipment-agent-backend
+    env_file:
+      - ./backend/.env
+    environment:
+      APP_ENV: local
+      APP_PORT: 8000
+      FRONTEND_ORIGIN: http://localhost:3100
+      SECRET_KEY: local-development-secret-change-before-deploy
+      DATABASE_URL: postgresql+psycopg://equipment_agent:equipment_agent@postgres:5432/equipment_agent
+      AUTO_CREATE_TABLES: "true"
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      GROQ_MODEL: ${GROQ_MODEL:-qwen/qwen3-32b}
+      CHROMA_PERSIST_DIR: ./data/chroma
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-hashing}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-sentence-transformers/all-MiniLM-L6-v2}
+      HASHING_EMBEDDING_DIMENSIONS: 256
+      TOP_K_TEXT: 5
+      TOP_K_IMAGES: 3
+      UPLOAD_DIR: ./data/uploads
+      IMAGE_DIR: ./data/images
+      TRACE_DIR: ./data/traces
+    ports:
+      - "8100:8000"
+    volumes:
+      - ./backend/data:/app/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: equipment-agent-frontend
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:8100
+    ports:
+      - "3100:3000"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:

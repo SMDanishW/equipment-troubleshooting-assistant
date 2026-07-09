@@ -1,0 +1,8 @@
+packages:
+  - "frontend"
+
+allowBuilds:
+  sharp: false
+
+ignoredBuiltDependencies:
+  - sharp
