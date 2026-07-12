@@ -1,21 +1,15 @@
 from datetime import datetime, timezone
-from enum import StrEnum
 from uuid import uuid4
 
 from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.database import Base
+from app.db.base import Base
+from app.domain.documents.entities import DocumentStatus
 
 
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
-
-
-class DocumentStatus(StrEnum):
-    PROCESSING = "processing"
-    INDEXED = "indexed"
-    FAILED = "failed"
 
 
 class Document(Base):
@@ -82,4 +76,3 @@ class DocumentImage(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
 
     document = relationship("Document", back_populates="images")
-

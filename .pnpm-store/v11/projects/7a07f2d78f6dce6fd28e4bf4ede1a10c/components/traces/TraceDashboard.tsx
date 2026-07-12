@@ -97,7 +97,7 @@ export function TraceDashboard({ conversationId }: Readonly<{ conversationId: st
         <>
           <section className="stats-grid trace-stats" aria-label="Trace summary">
             <TraceStat label="Status" value={trace.status} />
-            <TraceStat label="Agents" value={summary.agents.toLocaleString()} />
+            <TraceStat label="Workflow steps" value={summary.agents.toLocaleString()} />
             <TraceStat label="Duration" value={summary.duration} />
             <TraceStat label="Started" value={summary.created} />
           </section>

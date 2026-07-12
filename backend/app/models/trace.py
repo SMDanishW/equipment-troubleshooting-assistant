@@ -4,7 +4,7 @@ from uuid import uuid4
 from sqlalchemy import DateTime, ForeignKey, Integer, JSON, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.database import Base
+from app.db.base import Base
 
 
 def utc_now() -> datetime:
@@ -48,4 +48,3 @@ class AgentTrace(Base):
     completed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
 
     conversation = relationship("Conversation", back_populates="agent_traces")
-

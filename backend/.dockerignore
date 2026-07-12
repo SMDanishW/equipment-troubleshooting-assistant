@@ -4,4 +4,8 @@ __pycache__
 .env
 data
 tests
-
+!tests/
+tests/*
+!tests/Dockerfile.migrations
+!tests/test_document_repository.py
+!tests/test_migrations.py

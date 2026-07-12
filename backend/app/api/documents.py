@@ -1,13 +1,10 @@
-from typing import Annotated
+from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, Depends, File, Form, UploadFile, status
 
+from app.api.document_deps import get_document_service
 from app.api.deps import get_current_user
-from app.crud.documents import delete_document_for_user, get_document_for_user, list_documents_for_user
-from app.database import get_db
-from app.ingestion.pipeline import ingest_pdf_upload
-from app.models.user import User
+from app.application.documents.service import DocumentApplicationService
 from app.schemas.documents import DocumentDetail, DocumentRead, DocumentUploadResponse
 
 router = APIRouter(prefix="/documents", tags=["documents"])
@@ -18,50 +15,41 @@ def upload_document(
     file: Annotated[UploadFile, File()],
     equipment_name: Annotated[str, Form(min_length=1, max_length=255)],
     document_type: Annotated[str, Form(max_length=80)] = "auto",
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    current_user: Any = Depends(get_current_user),
+    service: DocumentApplicationService = Depends(get_document_service),
 ) -> DocumentUploadResponse:
-    if file.content_type not in {"application/pdf", "application/octet-stream"}:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only PDF uploads are supported.")
-    if not file.filename or not file.filename.lower().endswith(".pdf"):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Uploaded file must be a PDF.")
-
-    document = ingest_pdf_upload(
-        db=db,
+    document = service.upload(
         user=current_user,
         upload=file,
         equipment_name=equipment_name,
         document_type=document_type,
     )
+
     return DocumentUploadResponse.model_validate(document)
 
 
 @router.get("", response_model=list[DocumentRead])
 def list_documents(
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    current_user: Any = Depends(get_current_user),
+    service: DocumentApplicationService = Depends(get_document_service),
 ) -> list[DocumentRead]:
-    return [DocumentRead.model_validate(document) for document in list_documents_for_user(db, current_user.id)]
+    return [DocumentRead.model_validate(document) for document in service.list_for_user(current_user.id)]
 
 
 @router.get("/{document_id}", response_model=DocumentDetail)
 def get_document(
     document_id: str,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    current_user: Any = Depends(get_current_user),
+    service: DocumentApplicationService = Depends(get_document_service),
 ) -> DocumentDetail:
-    document = get_document_for_user(db, current_user.id, document_id)
-    if not document:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found.")
+    document = service.get_for_user(current_user.id, document_id)
     return DocumentDetail.model_validate(document)
 
 
 @router.delete("/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_document(
     document_id: str,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    current_user: Any = Depends(get_current_user),
+    service: DocumentApplicationService = Depends(get_document_service),
 ) -> None:
-    deleted = delete_document_for_user(db, current_user.id, document_id)
-    if not deleted:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found.")
+    service.delete_for_user(current_user.id, document_id)

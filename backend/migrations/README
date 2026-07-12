@@ -1,0 +1,6 @@
+This directory contains the ordered Alembic schema history for the backend database.
+
+Create revisions from backend/ with:
+    alembic revision --autogenerate -m "description"
+
+Review every generated revision before applying it.

@@ -1,0 +1,13 @@
+.git
+.agents
+.codex
+.pnpm-store
+.pytest_cache
+.venv
+backend
+node_modules
+*.pdf
+frontend/.next
+frontend/node_modules
+frontend/.env.local
+frontend/*.tsbuildinfo

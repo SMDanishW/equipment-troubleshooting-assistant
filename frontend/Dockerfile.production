@@ -1,0 +1,26 @@
+FROM node:22-alpine AS build
+
+WORKDIR /app
+RUN corepack enable
+COPY pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
+COPY frontend/package.json ./frontend/package.json
+RUN pnpm install --frozen-lockfile --filter equipment-agent-frontend...
+ARG NEXT_PUBLIC_API_BASE_URL
+ENV NEXT_PUBLIC_API_BASE_URL=${NEXT_PUBLIC_API_BASE_URL}
+COPY frontend ./frontend
+WORKDIR /app/frontend
+RUN node_modules/.bin/next build
+
+FROM node:22-alpine AS runtime
+
+ENV NODE_ENV=production
+WORKDIR /app
+COPY --from=build /app/node_modules ./node_modules
+COPY --from=build /app/frontend/node_modules ./frontend/node_modules
+COPY --from=build /app/frontend/.next ./frontend/.next
+COPY --from=build /app/frontend/package.json ./frontend/package.json
+COPY --from=build /app/frontend/next.config.ts ./frontend/next.config.ts
+WORKDIR /app/frontend
+USER node
+EXPOSE 3000
+CMD ["node_modules/.bin/next", "start", "--hostname", "0.0.0.0"]

@@ -7,6 +7,7 @@ from app.api.deps import get_current_user
 from app.database import get_db
 from app.models.user import User
 from app.schemas.chat import ChatRequest, ChatResponse
+from app.streaming.response import sse_response
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -33,7 +34,7 @@ def chat_stream(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> StreamingResponse:
-    return StreamingResponse(
+    return sse_response(
         stream_troubleshooting_graph(
             db=db,
             user=current_user,
@@ -41,11 +42,5 @@ def chat_stream(
             equipment_name=payload.equipment_name,
             document_ids=payload.document_ids,
             chat_history=[item.model_dump() for item in payload.chat_history],
-        ),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
+        )
     )

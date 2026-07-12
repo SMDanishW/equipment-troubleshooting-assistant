@@ -1,9 +1,11 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useMemo, useState } from "react";
 
 import { useAuth } from "@/components/auth/AuthProvider";
-import { deleteDocument, type EquipmentDocument, listDocuments, uploadDocument } from "@/lib/api";
+import { DocumentList, formatDocumentType } from "@/components/documents/DocumentList";
+import { useDocuments } from "@/hooks/useDocuments";
+import { deleteDocument, type EquipmentDocument, uploadDocument } from "@/lib/api";
 
 const documentTypeOptions = [
   { label: "Detect automatically", value: "auto" },
@@ -15,14 +17,13 @@ const documentTypeOptions = [
 
 export function DocumentsDashboard() {
   const { token } = useAuth();
-  const [documents, setDocuments] = useState<EquipmentDocument[]>([]);
+  const { documents, error: loadError, isLoading, refresh, remove, upsert } = useDocuments(token);
   const [equipmentName, setEquipmentName] = useState("Kemppi AX MIG Welder");
   const [documentType, setDocumentType] = useState("auto");
   const [file, setFile] = useState<File | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
   const [isUploading, setIsUploading] = useState(false);
   const [deletingDocumentId, setDeletingDocumentId] = useState<string | null>(null);
-  const [error, setError] = useState("");
+  const [actionError, setActionError] = useState("");
   const [notice, setNotice] = useState("");
 
   const totals = useMemo(
@@ -35,34 +36,15 @@ export function DocumentsDashboard() {
     [documents],
   );
 
-  const refreshDocuments = useCallback(async () => {
-    if (!token) {
-      return;
-    }
-    setIsLoading(true);
-    setError("");
-    try {
-      setDocuments(await listDocuments(token));
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Unable to load documents.");
-    } finally {
-      setIsLoading(false);
-    }
-  }, [token]);
-
-  useEffect(() => {
-    void refreshDocuments();
-  }, [refreshDocuments]);
-
   async function handleUpload(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = event.currentTarget;
     if (!token || !file) {
-      setError("Select a PDF before uploading.");
+      setActionError("Select a PDF before uploading.");
       return;
     }
 
-    setError("");
+    setActionError("");
     setNotice("");
     setIsUploading(true);
     try {
@@ -71,13 +53,17 @@ export function DocumentsDashboard() {
         equipmentName,
         documentType,
       });
-      setDocuments((current) => [uploaded, ...current.filter((document) => document.id !== uploaded.id)]);
+      upsert(uploaded);
       setFile(null);
       setDocumentType("auto");
-      setNotice(`${uploaded.filename} indexed successfully as ${formatDocumentType(uploaded.document_type)}.`);
+      setNotice(
+        uploaded.status === "processing"
+          ? `${uploaded.filename} queued for indexing.`
+          : `${uploaded.filename} indexed successfully as ${formatDocumentType(uploaded.document_type)}.`,
+      );
       form.reset();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Unable to upload document.");
+      setActionError(caught instanceof Error ? caught.message : "Unable to upload document.");
     } finally {
       setIsUploading(false);
     }
@@ -94,15 +80,15 @@ export function DocumentsDashboard() {
       return;
     }
 
-    setError("");
+    setActionError("");
     setNotice("");
     setDeletingDocumentId(document.id);
     try {
       await deleteDocument(token, document.id);
-      setDocuments((current) => current.filter((item) => item.id !== document.id));
+      remove(document.id);
       setNotice(`${document.filename} deleted.`);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Unable to delete document.");
+      setActionError(caught instanceof Error ? caught.message : "Unable to delete document.");
     } finally {
       setDeletingDocumentId(null);
     }
@@ -115,7 +101,7 @@ export function DocumentsDashboard() {
           <h1>Documents</h1>
           <p>Upload manuals and review indexed source coverage for this account.</p>
         </div>
-        <button className="button" disabled={isLoading || isUploading} onClick={refreshDocuments} type="button">
+        <button className="button" disabled={isLoading || isUploading} onClick={() => void refresh()} type="button">
           Refresh
         </button>
       </section>
@@ -161,31 +147,26 @@ export function DocumentsDashboard() {
               type="file"
             />
           </label>
-          {error ? <div className="form-error">{error}</div> : null}
+          {actionError || loadError ? <div className="form-error">{actionError || loadError}</div> : null}
           {notice ? <div className="form-success">{notice}</div> : null}
           <button className="button primary stretch" disabled={isUploading} type="submit">
-            {isUploading ? "Indexing..." : "Upload and Index"}
+            {isUploading ? "Uploading..." : "Upload and Index"}
           </button>
         </form>
 
         <section className="panel document-list-panel">
           <div className="panel-heading">
-            <h2>Indexed Manuals</h2>
+            <h2>Manuals</h2>
             <span>{isLoading ? "Loading" : `${documents.length} total`}</span>
           </div>
           {isLoading ? <p>Loading documents...</p> : null}
           {!isLoading && documents.length === 0 ? <p>No manuals indexed yet.</p> : null}
           {!isLoading && documents.length > 0 ? (
-            <div className="document-list">
-              {documents.map((document) => (
-                <DocumentListItem
-                  document={document}
-                  isDeleting={deletingDocumentId === document.id}
-                  key={document.id}
-                  onDelete={handleDeleteDocument}
-                />
-              ))}
-            </div>
+            <DocumentList
+              deletingDocumentId={deletingDocumentId}
+              documents={documents}
+              onDelete={handleDeleteDocument}
+            />
           ) : null}
         </section>
       </section>
@@ -200,44 +181,4 @@ function Stat({ label, value }: Readonly<{ label: string; value: number }>) {
       <strong>{value.toLocaleString()}</strong>
     </div>
   );
-}
-
-function DocumentListItem({
-  document,
-  isDeleting,
-  onDelete,
-}: Readonly<{
-  document: EquipmentDocument;
-  isDeleting: boolean;
-  onDelete: (document: EquipmentDocument) => void;
-}>) {
-  return (
-    <article className="document-item">
-      <div className="document-item-main">
-        <div>
-          <h3>{document.filename}</h3>
-          <p>
-            {document.equipment_name} - {formatDocumentType(document.document_type)}
-          </p>
-        </div>
-        <button className="button danger" disabled={isDeleting} onClick={() => onDelete(document)} type="button">
-          {isDeleting ? "Deleting..." : "Delete"}
-        </button>
-      </div>
-      <div className="document-meta">
-        <span className={`status status-${document.status}`}>{document.status}</span>
-        <span>{document.page_count.toLocaleString()} pages</span>
-        <span>{document.text_chunks_count.toLocaleString()} chunks</span>
-        <span>{document.images_extracted_count.toLocaleString()} images</span>
-      </div>
-      {document.error_message ? <div className="form-error">{document.error_message}</div> : null}
-    </article>
-  );
-}
-
-function formatDocumentType(value: string) {
-  return value
-    .split("_")
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
 }

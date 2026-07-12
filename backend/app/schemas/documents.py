@@ -2,7 +2,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict
 
-from app.models.document import DocumentStatus
+from app.domain.documents.entities import DocumentStatus
 
 
 class TextChunkRead(BaseModel):
@@ -51,4 +51,3 @@ class DocumentUploadResponse(DocumentRead):
 class DocumentDetail(DocumentRead):
     text_chunks: list[TextChunkRead]
     images: list[DocumentImageRead]
-

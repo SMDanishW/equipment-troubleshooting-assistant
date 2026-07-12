@@ -1,0 +1,17 @@
+FROM python:3.12-slim
+
+WORKDIR /app
+
+RUN pip install --no-cache-dir \
+    alembic==1.14.0 \
+    pydantic-settings==2.7.1 \
+    pytest==8.3.4 \
+    SQLAlchemy==2.0.36
+
+COPY alembic.ini ./alembic.ini
+COPY app ./app
+COPY migrations ./migrations
+COPY tests/test_document_repository.py ./tests/test_document_repository.py
+COPY tests/test_migrations.py ./tests/test_migrations.py
+
+CMD ["python", "-m", "pytest", "tests/test_migrations.py", "tests/test_document_repository.py", "-q"]

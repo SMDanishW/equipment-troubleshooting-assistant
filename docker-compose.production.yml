@@ -1,0 +1,119 @@
+x-backend-environment: &backend-environment
+  APP_ENV: production
+  APP_PORT: 8000
+  FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:?FRONTEND_ORIGIN is required}
+  SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required}
+  JWT_ALGORITHM: HS256
+  ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-60}
+  DATABASE_URL: postgresql+psycopg://equipment_agent:${POSTGRES_PASSWORD}@postgres:5432/equipment_agent
+  AUTO_CREATE_TABLES: "false"
+  LOG_LEVEL: ${LOG_LEVEL:-INFO}
+  LOG_FORMAT: json
+  DOCKER_LOGS_ENABLED: "false"
+  METRICS_ENABLED: "true"
+  GROQ_API_KEY: ${GROQ_API_KEY:-}
+  GROQ_MODEL: ${GROQ_MODEL:-qwen/qwen3-32b}
+  CHROMA_PERSIST_DIR: /app/data/chroma
+  EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-hashing}
+  EMBEDDING_MODEL: ${EMBEDDING_MODEL:-sentence-transformers/all-MiniLM-L6-v2}
+  HASHING_EMBEDDING_DIMENSIONS: 256
+  TOP_K_TEXT: 5
+  TOP_K_IMAGES: 3
+  UPLOAD_DIR: /app/data/uploads
+  IMAGE_DIR: /app/data/images
+  TRACE_DIR: /app/data/traces
+  MAX_UPLOAD_SIZE_MB: ${MAX_UPLOAD_SIZE_MB:-50}
+  MAX_PDF_PAGES: ${MAX_PDF_PAGES:-1000}
+  MAX_UPLOAD_FILENAME_LENGTH: 255
+  INGESTION_MODE: background
+  INGESTION_MAX_ATTEMPTS: ${INGESTION_MAX_ATTEMPTS:-3}
+  INGESTION_POLL_SECONDS: ${INGESTION_POLL_SECONDS:-2}
+  INGESTION_JOB_TIMEOUT_MINUTES: ${INGESTION_JOB_TIMEOUT_MINUTES:-30}
+  ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+  ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@example.com}
+  ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: equipment_agent
+      POSTGRES_USER: equipment_agent
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U equipment_agent -d equipment_agent"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  migrate:
+    build:
+      context: ./backend
+    command: ["alembic", "-c", "alembic.ini", "upgrade", "head"]
+    environment: *backend-environment
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  backend:
+    build:
+      context: ./backend
+    environment: *backend-environment
+    ports:
+      - "${BACKEND_PORT:-8100}:8000"
+    volumes:
+      - backend_data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/ready', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: ./backend
+    command: ["python", "-m", "app.workers.ingestion"]
+    environment: *backend-environment
+    volumes:
+      - backend_data:/app/data
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile.production
+      args:
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:?NEXT_PUBLIC_API_BASE_URL is required}
+    environment:
+      NODE_ENV: production
+      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL}
+    ports:
+      - "${FRONTEND_PORT:-3100}:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000').then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  backend_data:

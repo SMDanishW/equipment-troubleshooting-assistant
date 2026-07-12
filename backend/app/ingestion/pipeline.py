@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 
 from fastapi import UploadFile
@@ -6,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.ingestion.chunker import chunk_pages
 from app.ingestion.document_classifier import classify_document_type
+from app.ingestion.artifact_cleanup import cleanup_document_artifacts
 from app.ingestion.image_extractor import extract_pdf_images
 from app.ingestion.pdf_loader import extract_pdf_pages
 from app.models.document import Document, DocumentImage, DocumentStatus, TextChunk
@@ -13,8 +15,21 @@ from app.models.user import User
 from app.rag.indexer import index_document_evidence
 from app.storage.file_store import save_upload_file, safe_filename
 
+logger = logging.getLogger("equipment_agent.ingestion")
+
 
 def ingest_pdf_upload(
+    db: Session,
+    user: User,
+    upload: UploadFile,
+    equipment_name: str,
+    document_type: str,
+) -> Document:
+    document = stage_pdf_upload(db, user, upload, equipment_name, document_type)
+    return process_staged_document(db, document.id, final_failure_cleanup=True)
+
+
+def stage_pdf_upload(
     db: Session,
     user: User,
     upload: UploadFile,
@@ -31,11 +46,33 @@ def ingest_pdf_upload(
     db.add(document)
     db.flush()
 
-    upload_path = save_upload_file(upload, Path(settings.upload_dir), user.id, document.id)
+    upload_path = save_upload_file(
+        upload,
+        Path(settings.upload_dir),
+        user.id,
+        document.id,
+        max_bytes=settings.max_upload_size_mb * 1024 * 1024,
+    )
     document.storage_path = str(upload_path)
+    db.commit()
+    db.refresh(document)
+    return document
+
+
+def process_staged_document(db: Session, document_id: str, *, final_failure_cleanup: bool) -> Document:
+    document = db.get(Document, document_id)
+    if document is None or not document.storage_path:
+        raise LookupError(f"Staged document {document_id} was not found.")
+    user = db.get(User, document.user_id)
+    if user is None:
+        raise LookupError(f"User for staged document {document_id} was not found.")
+    upload_path = Path(document.storage_path)
+    document.status = DocumentStatus.PROCESSING
+    document.error_message = None
+    db.commit()
 
     try:
-        page_count, pages = extract_pdf_pages(upload_path)
+        page_count, pages = extract_pdf_pages(upload_path, max_pages=settings.max_pdf_pages)
         if document.document_type in {"", "auto", "unknown", "detect_automatically"}:
             document.document_type = classify_document_type(pages)
 
@@ -80,10 +117,37 @@ def ingest_pdf_upload(
         document.status = DocumentStatus.INDEXED
         document.error_message = None
     except Exception as exc:
-        document.status = DocumentStatus.FAILED
-        document.error_message = str(exc)
+        db.rollback()
+        cleanup_succeeded = True
+        try:
+            cleanup_document_artifacts(
+                user_id=user.id,
+                document_id=document.id,
+                continue_on_error=True,
+                remove_upload=final_failure_cleanup,
+                remove_images=True,
+            )
+        except Exception:
+            cleanup_succeeded = False
+            logger.exception(
+                "failed_ingestion_cleanup_failed",
+                extra={"user_id": user.id, "document_id": document.id},
+            )
+
+        failed_document = db.get(Document, document.id)
+        if failed_document is None:
+            raise
+        failed_document.status = DocumentStatus.FAILED if final_failure_cleanup else DocumentStatus.PROCESSING
+        failed_document.error_message = str(exc)[:4000]
+        failed_document.page_count = 0
+        failed_document.text_chunks_count = 0
+        failed_document.images_extracted_count = 0
+        if final_failure_cleanup and (
+            cleanup_succeeded or (failed_document.storage_path and not Path(failed_document.storage_path).exists())
+        ):
+            failed_document.storage_path = None
         db.commit()
-        db.refresh(document)
+        db.refresh(failed_document)
         raise
 
     db.commit()

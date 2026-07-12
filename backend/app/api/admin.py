@@ -3,6 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.api.deps import get_current_user
+from app.config import settings
 from app.database import get_db
 from app.models.trace import Conversation
 from app.services.docker_logs import DOCKER_LOG_SERVICES, get_container_logs
@@ -16,6 +17,7 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 @router.get("/docker/services")
 def list_docker_log_services(current_user: User = Depends(get_current_user)) -> dict[str, list[str]]:
     require_admin(current_user)
+    require_docker_logs_enabled()
     return {"services": list(DOCKER_LOG_SERVICES.keys())}
 
 
@@ -25,6 +27,7 @@ def list_user_overview(
     db: Session = Depends(get_db),
 ) -> list[AdminUserOverviewRead]:
     require_admin(current_user)
+    require_docker_logs_enabled()
     statement = (
         select(User)
         .options(selectinload(User.documents), selectinload(User.conversations))
@@ -53,6 +56,11 @@ def docker_logs(
 def require_admin(user: User) -> None:
     if not user.is_admin:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin role required.")
+
+
+def require_docker_logs_enabled() -> None:
+    if not settings.docker_logs_enabled:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Docker log access is disabled.")
 
 
 def _build_user_overview(user: User) -> AdminUserOverviewRead:

@@ -1,4 +1,3 @@
-from sqlalchemy import inspect, text
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -8,20 +7,7 @@ from app.models.user import User
 
 
 def run_startup_bootstrap(db: Session) -> None:
-    ensure_user_role_column(db)
     seed_admin_user(db)
-
-
-def ensure_user_role_column(db: Session) -> None:
-    inspector = inspect(db.bind)
-    if "users" not in inspector.get_table_names():
-        return
-    columns = {column["name"] for column in inspector.get_columns("users")}
-    if "role" in columns:
-        return
-
-    db.execute(text("ALTER TABLE users ADD COLUMN role VARCHAR(32) NOT NULL DEFAULT 'user'"))
-    db.commit()
 
 
 def seed_admin_user(db: Session) -> None:
@@ -45,4 +31,3 @@ def seed_admin_user(db: Session) -> None:
         )
         db.add(admin)
     db.commit()
-

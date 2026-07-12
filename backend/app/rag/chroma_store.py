@@ -75,8 +75,8 @@ class ChromaStore:
             except Exception:
                 try:
                     collection.delete(where={"document_id": document_id})
-                except Exception:
-                    pass
+                except Exception as fallback_error:
+                    raise RuntimeError(f"Unable to remove vector evidence for document {document_id}.") from fallback_error
 
     def _search(
         self,

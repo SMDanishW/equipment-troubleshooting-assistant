@@ -6,8 +6,8 @@ export default function HomePage() {
       <section className="panel">
         <h1>Equipment Troubleshooting Agent</h1>
         <p>
-          Local-first portfolio build for authenticated manual upload, multimodal RAG, agent traces, and streaming
-          troubleshooting answers.
+          Local-first demo for authenticated manual upload, text and figure-reference retrieval, inspectable workflow
+          traces, and streaming troubleshooting answers.
         </p>
         <div className="actions">
           <Link className="button primary" href="/documents">

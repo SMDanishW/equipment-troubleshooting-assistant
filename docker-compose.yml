@@ -29,6 +29,10 @@ services:
       SECRET_KEY: local-development-secret-change-before-deploy
       DATABASE_URL: postgresql+psycopg://equipment_agent:equipment_agent@postgres:5432/equipment_agent
       AUTO_CREATE_TABLES: "true"
+      LOG_LEVEL: INFO
+      LOG_FORMAT: console
+      DOCKER_LOGS_ENABLED: "true"
+      METRICS_ENABLED: "true"
       GROQ_API_KEY: ${GROQ_API_KEY:-}
       GROQ_MODEL: ${GROQ_MODEL:-qwen/qwen3-32b}
       CHROMA_PERSIST_DIR: ./data/chroma
@@ -40,6 +44,13 @@ services:
       UPLOAD_DIR: ./data/uploads
       IMAGE_DIR: ./data/images
       TRACE_DIR: ./data/traces
+      MAX_UPLOAD_SIZE_MB: ${MAX_UPLOAD_SIZE_MB:-50}
+      MAX_PDF_PAGES: ${MAX_PDF_PAGES:-1000}
+      MAX_UPLOAD_FILENAME_LENGTH: 255
+      INGESTION_MODE: background
+      INGESTION_MAX_ATTEMPTS: 3
+      INGESTION_POLL_SECONDS: 2
+      INGESTION_JOB_TIMEOUT_MINUTES: 30
     ports:
       - "8100:8000"
     volumes:
@@ -48,6 +59,49 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/ready', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+
+  worker:
+    build:
+      context: ./backend
+    command: ["python", "-m", "app.workers.ingestion"]
+    env_file:
+      - ./backend/.env
+    environment:
+      APP_ENV: local
+      SECRET_KEY: local-development-secret-change-before-deploy
+      DATABASE_URL: postgresql+psycopg://equipment_agent:equipment_agent@postgres:5432/equipment_agent
+      AUTO_CREATE_TABLES: "false"
+      LOG_LEVEL: INFO
+      LOG_FORMAT: console
+      DOCKER_LOGS_ENABLED: "false"
+      METRICS_ENABLED: "false"
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      GROQ_MODEL: ${GROQ_MODEL:-qwen/qwen3-32b}
+      CHROMA_PERSIST_DIR: ./data/chroma
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-hashing}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-sentence-transformers/all-MiniLM-L6-v2}
+      HASHING_EMBEDDING_DIMENSIONS: 256
+      UPLOAD_DIR: ./data/uploads
+      IMAGE_DIR: ./data/images
+      TRACE_DIR: ./data/traces
+      MAX_UPLOAD_SIZE_MB: ${MAX_UPLOAD_SIZE_MB:-50}
+      MAX_PDF_PAGES: ${MAX_PDF_PAGES:-1000}
+      INGESTION_MODE: background
+      INGESTION_MAX_ATTEMPTS: 3
+      INGESTION_POLL_SECONDS: 2
+      INGESTION_JOB_TIMEOUT_MINUTES: 30
+    volumes:
+      - ./backend/data:/app/data
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
 
   frontend:
     build:
@@ -58,7 +112,14 @@ services:
     ports:
       - "3100:3000"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000').then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
 
 volumes:
   postgres_data:

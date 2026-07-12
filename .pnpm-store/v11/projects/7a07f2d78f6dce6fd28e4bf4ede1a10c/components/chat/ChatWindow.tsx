@@ -7,12 +7,12 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 import { useAuth } from "@/components/auth/AuthProvider";
+import { formatDocumentType } from "@/components/documents/DocumentList";
+import { useDocuments } from "@/hooks/useDocuments";
 import {
   API_BASE_URL,
   type CitationDetail,
-  type EquipmentDocument,
   getCitation,
-  listDocuments,
   uploadDocument,
 } from "@/lib/api";
 
@@ -79,9 +79,12 @@ export function ChatWindow() {
   const [uploadDocumentType, setUploadDocumentType] = useState("auto");
   const [isUploading, setIsUploading] = useState(false);
   const [uploadNotice, setUploadNotice] = useState("");
-  const [availableDocuments, setAvailableDocuments] = useState<EquipmentDocument[]>([]);
+  const { documents, error: documentError, isLoading: isLoadingDocuments, upsert: upsertDocument } = useDocuments(token);
+  const availableDocuments = useMemo(
+    () => documents.filter((document) => document.status === "indexed"),
+    [documents],
+  );
   const [selectedDocumentIds, setSelectedDocumentIds] = useState<string[]>([]);
-  const [isLoadingDocuments, setIsLoadingDocuments] = useState(false);
   const [thinkingIndex, setThinkingIndex] = useState(0);
 
   const storageKey = user ? `equipment_agent_chat_${user.id}` : null;
@@ -127,39 +130,16 @@ export function ChatWindow() {
   }, [storageKey]);
 
   useEffect(() => {
-    if (!token) {
-      return;
-    }
-    const authToken = token;
-    let isCancelled = false;
+    setSelectedDocumentIds((current) =>
+      current.filter((documentId) => availableDocuments.some((document) => document.id === documentId)),
+    );
+  }, [availableDocuments]);
 
-    async function loadAvailableDocuments() {
-      setIsLoadingDocuments(true);
-      try {
-        const documents = await listDocuments(authToken);
-        if (isCancelled) {
-          return;
-        }
-        setAvailableDocuments(documents);
-        setSelectedDocumentIds((current) =>
-          current.filter((documentId) => documents.some((document) => document.id === documentId)),
-        );
-      } catch (caught) {
-        if (!isCancelled) {
-          setError(caught instanceof Error ? caught.message : "Unable to load uploaded manuals.");
-        }
-      } finally {
-        if (!isCancelled) {
-          setIsLoadingDocuments(false);
-        }
-      }
+  useEffect(() => {
+    if (documentError) {
+      setError(documentError);
     }
-
-    void loadAvailableDocuments();
-    return () => {
-      isCancelled = true;
-    };
-  }, [token]);
+  }, [documentError]);
 
   useEffect(() => {
     if (!storageKey) {
@@ -315,11 +295,15 @@ export function ChatWindow() {
         equipmentName,
         documentType: uploadDocumentType,
       });
-      setAvailableDocuments((current) => [uploaded, ...current.filter((document) => document.id !== uploaded.id)]);
-      setSelectedDocumentIds([uploaded.id]);
+      upsertDocument(uploaded);
+      setSelectedDocumentIds(uploaded.status === "indexed" ? [uploaded.id] : []);
       setUploadFile(null);
       setUploadDocumentType("auto");
-      setUploadNotice(`${uploaded.filename} indexed as ${formatDocumentType(uploaded.document_type)}.`);
+      setUploadNotice(
+        uploaded.status === "processing"
+          ? `${uploaded.filename} queued for indexing.`
+          : `${uploaded.filename} indexed as ${formatDocumentType(uploaded.document_type)}.`,
+      );
       form.reset();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to upload document.");
@@ -851,13 +835,6 @@ function formatCitationLabel(citationId: string, citationMap: Map<string, Citati
   const idsOfType = orderedIds.filter((id) => (type === "image" ? id.startsWith("img_") : id.startsWith("txt_")));
   const index = Math.max(1, idsOfType.indexOf(citationId) + 1);
   return type === "image" ? `Figure ${index}` : `Source ${index}`;
-}
-
-function formatDocumentType(value: string) {
-  return value
-    .split("_")
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
 }
 
 async function fetchAuthenticatedBlobUrl(token: string, path: string): Promise<string> {
