@@ -4,7 +4,7 @@ from time import sleep
 from app.config import settings
 from app.database import SessionLocal
 from app.infrastructure.repositories.ingestion_jobs import SqlAlchemyIngestionJobRepository
-from app.ingestion.pipeline import process_staged_document
+from app.infrastructure.ingestion.service import build_ingestion_service
 from app.observability.logging import configure_logging
 
 logger = logging.getLogger("equipment_agent.ingestion_worker")
@@ -17,7 +17,10 @@ def process_next_job() -> bool:
         if job is None:
             return False
         try:
-            process_staged_document(db, job.document_id, final_failure_cleanup=job.attempts >= job.max_attempts)
+            build_ingestion_service(db).process_queued(
+                job.document_id,
+                final_attempt=job.attempts >= job.max_attempts,
+            )
         except Exception as exc:
             exhausted = repository.fail_or_requeue(job, exc)
             logger.exception(

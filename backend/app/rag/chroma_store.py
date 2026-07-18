@@ -5,6 +5,7 @@ from typing import Any
 import chromadb
 
 from app.config import settings
+from app.domain.retrieval.entities import VectorHit
 from app.rag.embeddings import get_embedding_provider
 
 TEXT_COLLECTION = "equipment_text_chunks"
@@ -55,8 +56,8 @@ class ChromaStore:
         query: str,
         top_k: int,
         document_ids: list[str] | None = None,
-    ) -> list[dict[str, Any]]:
-        return self._search(self.text_collection, user_id, query, top_k, document_ids)
+    ) -> list[VectorHit]:
+        return self._search(self.client.get_collection(TEXT_COLLECTION), user_id, query, top_k, document_ids)
 
     def search_images(
         self,
@@ -64,12 +65,16 @@ class ChromaStore:
         query: str,
         top_k: int,
         document_ids: list[str] | None = None,
-    ) -> list[dict[str, Any]]:
-        return self._search(self.image_collection, user_id, query, top_k, document_ids)
+    ) -> list[VectorHit]:
+        return self._search(self.client.get_collection(IMAGE_COLLECTION), user_id, query, top_k, document_ids)
 
     def delete_document(self, user_id: str, document_id: str) -> None:
         where = {"$and": [{"user_id": user_id}, {"document_id": document_id}]}
-        for collection in (self.text_collection, self.image_collection):
+        collections = (
+            self.client.get_collection(TEXT_COLLECTION),
+            self.client.get_collection(IMAGE_COLLECTION),
+        )
+        for collection in collections:
             try:
                 collection.delete(where=where)
             except Exception:
@@ -85,7 +90,7 @@ class ChromaStore:
         query: str,
         top_k: int,
         document_ids: list[str] | None = None,
-    ) -> list[dict[str, Any]]:
+    ) -> list[VectorHit]:
         if top_k <= 0:
             return []
         result = collection.query(
@@ -98,15 +103,15 @@ class ChromaStore:
         documents = result.get("documents", [[]])[0]
         metadatas = result.get("metadatas", [[]])[0]
         distances = result.get("distances", [[]])[0]
-        rows: list[dict[str, Any]] = []
+        rows: list[VectorHit] = []
         for index, item_id in enumerate(ids):
             rows.append(
-                {
-                    "id": item_id,
-                    "document": documents[index],
-                    "metadata": metadatas[index],
-                    "distance": distances[index],
-                }
+                VectorHit(
+                    id=item_id,
+                    document=documents[index],
+                    metadata=metadatas[index],
+                    distance=distances[index],
+                )
             )
         return rows
 

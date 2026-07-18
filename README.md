@@ -94,7 +94,17 @@ reflection, or cross-check pipeline.
 
 ## Embeddings And Retrieval
 
-The application currently uses ChromaDB for vector retrieval.
+The application uses hybrid retrieval by default: ChromaDB vector candidates and BM25 lexical candidates are merged with
+reciprocal-rank fusion. Tenant and selected-document filters are applied before lexical ranking and revalidated after fusion.
+
+```text
+RETRIEVAL_MODE=hybrid
+RETRIEVAL_CANDIDATE_MULTIPLIER=4
+LEXICAL_CANDIDATE_LIMIT=1000
+RECIPROCAL_RANK_FUSION_K=60
+```
+
+Set `RETRIEVAL_MODE=vector` to roll back to vector-only text retrieval without reindexing documents.
 
 ### Text Embeddings
 
@@ -104,7 +114,8 @@ Default provider:
 EMBEDDING_PROVIDER=hashing
 ```
 
-That means the default local Docker setup uses a hashed bag-of-words style vector embedding. It is lightweight and convenient for local demos, but it is not true dense semantic embedding and it is not hybrid search.
+That means the vector side of the default local setup uses a hashed bag-of-words embedding. It is lightweight and convenient
+for local demos, while BM25 supplies exact lexical matching for terms such as equipment identifiers and error codes.
 
 Optional semantic provider:
 
@@ -130,9 +141,9 @@ Instead, extracted images are indexed as image references using nearby page text
 
 In short:
 
-- Text search: Chroma vector search over extracted manual text.
+- Text search: hybrid BM25 and Chroma vector retrieval with reciprocal-rank fusion.
 - Image search: Chroma vector search over text descriptions/nearby text for extracted images.
-- Hybrid BM25 + vector retrieval: not currently implemented.
+- Vector-only text rollback: available through `RETRIEVAL_MODE=vector`.
 - Visual CLIP-style image embeddings: not currently implemented.
 
 ## Project Structure

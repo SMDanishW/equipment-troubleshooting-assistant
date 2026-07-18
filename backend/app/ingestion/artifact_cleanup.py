@@ -1,8 +1,5 @@
-from pathlib import Path
-
-from app.config import settings
-from app.rag.chroma_store import get_chroma_store
-from app.storage.artifact_lifecycle import remove_document_file_trees
+from app.infrastructure.retrieval import build_retrieval_service
+from app.infrastructure.storage.factory import build_artifact_store
 
 
 class ArtifactCleanupError(RuntimeError):
@@ -19,16 +16,14 @@ def cleanup_document_artifacts(
 ) -> None:
     errors: list[Exception] = []
     try:
-        get_chroma_store().delete_document(user_id=user_id, document_id=document_id)
+        build_retrieval_service().delete_document(user_id=user_id, document_id=document_id)
     except Exception as exc:
         if not continue_on_error:
             raise ArtifactCleanupError(f"Unable to clean vector artifacts for document {document_id}.") from exc
         errors.append(exc)
 
     try:
-        remove_document_file_trees(
-            upload_root=Path(settings.upload_dir),
-            image_root=Path(settings.image_dir),
+        build_artifact_store().delete_document(
             user_id=user_id,
             document_id=document_id,
             remove_upload=remove_upload,

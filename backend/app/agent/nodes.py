@@ -3,6 +3,15 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from app.agent.contracts import (
+    CrossCheckOutput,
+    DiagnosisOutput,
+    FinalSynthesisOutput,
+    GuardrailsOutput,
+    QueryUnderstandingOutput,
+    TroubleshootingOutput,
+)
+from app.config import settings
 from app.rag.retriever import retrieve_evidence
 
 
@@ -12,14 +21,14 @@ def query_understanding_node(state: dict[str, Any]) -> dict[str, Any]:
     is_followup = bool(previous_user_context) and _is_followup_question(question)
     normalized_query = f"{previous_user_context}\n{question.strip()}" if is_followup else question.strip()
     error_code = re.search(r"\b[A-Z]?\d{2,4}\b", question.upper())
-    output = {
+    output = QueryUnderstandingOutput.model_validate({
         "query_type": "error_code" if "error" in question.lower() or error_code else "symptom_or_maintenance",
         "normalized_query": normalized_query,
         "is_followup": is_followup,
         "previous_user_context": previous_user_context,
         "needs_clarification": len(question.strip()) < 4,
         "clarification_questions": [],
-    }
+    }).model_dump()
     _log(state, "Query Understanding Agent", {"question": question}, output)
     return {"query_understanding": output}
 
@@ -30,8 +39,8 @@ def retrieval_node(state: dict[str, Any]) -> dict[str, Any]:
         db=db,
         user_id=state["user_id"],
         query=state["query_understanding"]["normalized_query"],
-        top_k_text=5,
-        top_k_images=8,
+        top_k_text=settings.top_k_text,
+        top_k_images=settings.top_k_images,
         document_ids=state.get("document_ids"),
     )
     output = result.model_dump()
@@ -54,10 +63,10 @@ def diagnosis_node(state: dict[str, Any]) -> dict[str, Any]:
                 "evidence_ids": [evidence[0]["id"]],
             }
         )
-    output = {
+    output = DiagnosisOutput.model_validate({
         "likely_causes": causes,
         "insufficient_context": not evidence,
-    }
+    }).model_dump()
     _log(state, "Diagnosis Agent", {"evidence_count": len(evidence)}, output)
     return {"diagnosis": output}
 
@@ -81,7 +90,7 @@ def troubleshooting_steps_node(state: dict[str, Any]) -> dict[str, Any]:
                 "risk_level": "medium",
             }
         )
-    output = {"steps": steps}
+    output = TroubleshootingOutput.model_validate({"steps": steps}).model_dump()
     _log(state, "Troubleshooting Steps Agent", state["diagnosis"], output)
     return {"troubleshooting_steps": output}
 
@@ -95,7 +104,7 @@ def guardrails_node(state: dict[str, Any]) -> dict[str, Any]:
             blocked_steps.append(step)
         else:
             approved_steps.append(step)
-    output = {
+    output = GuardrailsOutput.model_validate({
         "approved": not blocked_steps,
         "safety_notes": [
             "Disconnect power before inspection when the manual or local safety procedure requires it.",
@@ -103,7 +112,7 @@ def guardrails_node(state: dict[str, Any]) -> dict[str, Any]:
         ],
         "blocked_steps": blocked_steps,
         "approved_steps": approved_steps,
-    }
+    }).model_dump()
     _log(state, "Guardrails Agent", state["troubleshooting_steps"], output)
     return {"guardrails": output}
 
@@ -115,11 +124,11 @@ def cross_check_node(state: dict[str, Any]) -> dict[str, Any]:
     for step in state["guardrails"]["approved_steps"]:
         if not set(step["evidence_ids"]).issubset(citation_ids):
             issues.append({"step": step["step"], "issue": "Missing or invalid citation."})
-    output = {
+    output = CrossCheckOutput.model_validate({
         "is_grounded": not issues,
         "unsupported_claims": [],
         "citation_issues": issues,
-    }
+    }).model_dump()
     _log(state, "Cross-Check Agent", state["guardrails"], output)
     return {"cross_check": output}
 
@@ -224,7 +233,9 @@ def final_synthesis_node(state: dict[str, Any]) -> dict[str, Any]:
         for item in image_evidence:
             answer += f"- Figure source: {item['source_file']}, page {item['page']}\n"
 
-    output = {"answer": answer, "citations": citations, "images": images}
+    output = FinalSynthesisOutput.model_validate(
+        {"answer": answer, "citations": citations, "images": images}
+    ).model_dump()
     _log(state, "Final Synthesis Agent", state["cross_check"], output)
     return {"final_answer": answer, "citations": citations, "images": images}
 

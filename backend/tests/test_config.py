@@ -10,12 +10,14 @@ def test_settings_normalize_environment_provider_and_origins(monkeypatch):
     monkeypatch.setenv("APP_ENV", " LOCAL ")
     monkeypatch.setenv("EMBEDDING_PROVIDER", " SENTENCE_TRANSFORMERS ")
     monkeypatch.setenv("FRONTEND_ORIGIN", "http://localhost:3100/, https://example.com/")
+    monkeypatch.setenv("RETRIEVAL_MODE", " HYBRID ")
 
     configured = Settings(_env_file=None)
 
     assert configured.app_env == "local"
     assert configured.embedding_provider == "sentence_transformers"
     assert configured.cors_origins == ["http://localhost:3100", "https://example.com"]
+    assert configured.retrieval_mode == "hybrid"
 
 
 @pytest.mark.parametrize(
@@ -31,6 +33,7 @@ def test_settings_normalize_environment_provider_and_origins(monkeypatch):
         ("MAX_UPLOAD_SIZE_MB", "0", "greater than 0"),
         ("MAX_PDF_PAGES", "0", "greater than 0"),
         ("INGESTION_MODE", "unknown", "INGESTION_MODE must be one of"),
+        ("RETRIEVAL_MODE", "semantic", "RETRIEVAL_MODE must be one of"),
     ],
 )
 def test_settings_reject_invalid_values(monkeypatch, variable, value, message):

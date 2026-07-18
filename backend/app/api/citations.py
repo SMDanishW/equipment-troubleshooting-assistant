@@ -11,6 +11,7 @@ from pypdf.generic import ArrayObject, FloatObject
 
 from app.api.deps import get_current_user
 from app.database import get_db
+from app.infrastructure.storage.factory import build_artifact_store
 from app.models.document import Document, DocumentImage, TextChunk
 from app.models.user import User
 from app.schemas.citations import CitationRead
@@ -71,7 +72,7 @@ def get_image_file(
     if not image or image.document.user_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image not found.")
 
-    image_path = Path(image.image_path)
+    image_path = build_artifact_store().resolve(image.image_path)
     if not image_path.exists() or not image_path.is_file():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image file not found.")
     return FileResponse(image_path)
@@ -86,7 +87,7 @@ def get_pdf_file(
     document = db.get(Document, document_id)
     if not document or document.user_id != current_user.id or not document.storage_path:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="PDF not found.")
-    pdf_path = Path(document.storage_path)
+    pdf_path = build_artifact_store().resolve(document.storage_path)
     if not pdf_path.exists() or not pdf_path.is_file():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="PDF file not found.")
     return FileResponse(pdf_path, media_type="application/pdf", filename=document.filename)
@@ -105,7 +106,7 @@ def get_highlighted_citation_pdf(
     chunk = db.get(TextChunk, entity_id)
     if not chunk or chunk.document.user_id != current_user.id or not chunk.document.storage_path:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Citation not found.")
-    pdf_path = Path(chunk.document.storage_path)
+    pdf_path = build_artifact_store().resolve(chunk.document.storage_path)
     if not pdf_path.exists() or not pdf_path.is_file():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="PDF file not found.")
 

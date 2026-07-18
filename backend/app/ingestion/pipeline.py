@@ -13,7 +13,8 @@ from app.ingestion.pdf_loader import extract_pdf_pages
 from app.models.document import Document, DocumentImage, DocumentStatus, TextChunk
 from app.models.user import User
 from app.rag.indexer import index_document_evidence
-from app.storage.file_store import save_upload_file, safe_filename
+from app.infrastructure.storage.factory import build_artifact_store
+from app.storage.file_store import safe_filename
 
 logger = logging.getLogger("equipment_agent.ingestion")
 
@@ -46,14 +47,13 @@ def stage_pdf_upload(
     db.add(document)
     db.flush()
 
-    upload_path = save_upload_file(
+    upload_path = build_artifact_store().save_upload(
         upload,
-        Path(settings.upload_dir),
-        user.id,
-        document.id,
+        user_id=user.id,
+        document_id=document.id,
         max_bytes=settings.max_upload_size_mb * 1024 * 1024,
     )
-    document.storage_path = str(upload_path)
+    document.storage_path = upload_path
     db.commit()
     db.refresh(document)
     return document
@@ -66,7 +66,8 @@ def process_staged_document(db: Session, document_id: str, *, final_failure_clea
     user = db.get(User, document.user_id)
     if user is None:
         raise LookupError(f"User for staged document {document_id} was not found.")
-    upload_path = Path(document.storage_path)
+    artifact_store = build_artifact_store()
+    upload_path = artifact_store.resolve(document.storage_path)
     document.status = DocumentStatus.PROCESSING
     document.error_message = None
     db.commit()
@@ -92,7 +93,7 @@ def process_staged_document(db: Session, document_id: str, *, final_failure_clea
             db.add(text_chunk)
             created_chunks.append(text_chunk)
 
-        image_output_dir = Path(settings.image_dir) / user.id / document.id
+        image_output_dir = artifact_store.image_output_directory(user_id=user.id, document_id=document.id)
         images = extract_pdf_images(upload_path, image_output_dir, document.id)
         document.images_extracted_count = len(images)
         created_images: list[DocumentImage] = []
@@ -143,7 +144,11 @@ def process_staged_document(db: Session, document_id: str, *, final_failure_clea
         failed_document.text_chunks_count = 0
         failed_document.images_extracted_count = 0
         if final_failure_cleanup and (
-            cleanup_succeeded or (failed_document.storage_path and not Path(failed_document.storage_path).exists())
+            cleanup_succeeded
+            or (
+                failed_document.storage_path
+                and not build_artifact_store().resolve(failed_document.storage_path).exists()
+            )
         ):
             failed_document.storage_path = None
         db.commit()

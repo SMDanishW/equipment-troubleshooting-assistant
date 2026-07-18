@@ -2,7 +2,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from app.ingestion.pipeline import ingest_pdf_upload
+from app.infrastructure.ingestion.service import build_ingestion_service
 
 
 class SynchronousDocumentIngestor:
@@ -17,8 +17,7 @@ class SynchronousDocumentIngestor:
         equipment_name: str,
         document_type: str,
     ) -> Any:
-        return ingest_pdf_upload(
-            db=self.db,
+        return build_ingestion_service(self.db).ingest_inline(
             user=user,
             upload=upload,
             equipment_name=equipment_name,

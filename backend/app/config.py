@@ -42,6 +42,11 @@ class Settings(BaseSettings):
     hashing_embedding_dimensions: int = Field(default=256, gt=0, alias="HASHING_EMBEDDING_DIMENSIONS")
     top_k_text: int = Field(default=5, gt=0, alias="TOP_K_TEXT")
     top_k_images: int = Field(default=3, gt=0, alias="TOP_K_IMAGES")
+    retrieval_mode: str = Field(default="hybrid", alias="RETRIEVAL_MODE")
+    retrieval_candidate_multiplier: int = Field(default=4, ge=1, le=20, alias="RETRIEVAL_CANDIDATE_MULTIPLIER")
+    lexical_candidate_limit: int = Field(default=1000, ge=50, le=10000, alias="LEXICAL_CANDIDATE_LIMIT")
+    reciprocal_rank_fusion_k: int = Field(default=60, ge=1, le=1000, alias="RECIPROCAL_RANK_FUSION_K")
+    max_revision_loops: int = Field(default=1, ge=0, le=3, alias="MAX_REVISION_LOOPS")
 
     groq_api_key: str = Field(default="", alias="GROQ_API_KEY")
     groq_model: str = Field(default="qwen/qwen3-32b", alias="GROQ_MODEL")
@@ -92,6 +97,14 @@ class Settings(BaseSettings):
         normalized = str(value).strip().lower()
         if normalized not in {"inline", "background"}:
             raise ValueError("INGESTION_MODE must be one of: background, inline")
+        return normalized
+
+    @field_validator("retrieval_mode", mode="before")
+    @classmethod
+    def validate_retrieval_mode(cls, value: object) -> str:
+        normalized = str(value).strip().lower()
+        if normalized not in {"hybrid", "vector"}:
+            raise ValueError("RETRIEVAL_MODE must be one of: hybrid, vector")
         return normalized
 
     @field_validator("frontend_origin")
